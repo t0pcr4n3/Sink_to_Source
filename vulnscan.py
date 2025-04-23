@@ -5,7 +5,7 @@ import csv
 import argparse
 from pathlib import Path
 
-# 🔥 Sinks with optional filters to exclude safe variants
+# 🚨 Sink patterns with optional safe filters
 SINKS = {
     "memcpy":      (r"memcpy\(.*?,.*?,\s*[a-zA-Z_]", r"sizeof"),
     "strcpy":      (r"strcpy\(.*?,.*?\)", r"strncpy"),
@@ -21,11 +21,13 @@ SINKS = {
     "malloc":      (r"malloc\(.*?\)", r"sizeof")
 }
 
+# 🎨 Terminal coloring
 def color(text, code): return f"\033[{code}m{text}\033[0m"
 def red(text): return color(text, "31")
 def green(text): return color(text, "32")
 def bold(text): return color(text, "1")
 
+# 🧪 Scan a single file
 def scan_file(file_path, pattern, exclude=None):
     results = []
     try:
@@ -41,18 +43,26 @@ def scan_file(file_path, pattern, exclude=None):
         print(f"[!] Error reading {file_path}: {e}")
     return results
 
-def run_scan(target_dir=".", sink_filter=None):
+# 🚀 Scan files for specified sinks
+def run_scan(target_path, sink_filter=None):
     print(bold("\n🔥 Running vulnscan.py 🔍\n"))
     all_results = []
 
     sinks_to_scan = {k: v for k, v in SINKS.items() if not sink_filter or k == sink_filter}
 
+    path = Path(target_path)
+
+    if path.is_file():
+        files_to_scan = [path] if path.suffix in [".c", ".cpp", ".cc", ".C", ".CPP"] else []
+    else:
+        files_to_scan = list(path.rglob("*.[cC]")) + list(path.rglob("*.[cC][pP][pP]"))
+
     for sink, (pattern, exclude) in sinks_to_scan.items():
         print(bold(f"🔎 Scanning for {sink}..."))
         count = 0
 
-        for path in Path(target_dir).rglob("*.[cC]") | Path(target_dir).rglob("*.[cC][pP][pP]"):
-            results = scan_file(path, pattern, exclude)
+        for file in files_to_scan:
+            results = scan_file(file, pattern, exclude)
             for r in results:
                 print(f"  📄 {r['file']}:{r['line']}: {red(r['code'])}")
                 all_results.append({"sink": sink, **r})
@@ -64,6 +74,7 @@ def run_scan(target_dir=".", sink_filter=None):
     print(bold("✅ Scan complete.\n"))
     return all_results
 
+# 📦 Export to json/csv
 def export_results(results, format, output_path):
     try:
         with open(output_path, "w", encoding="utf-8", newline='') as f:
@@ -77,12 +88,13 @@ def export_results(results, format, output_path):
     except Exception as e:
         print(red(f"[!] Failed to export: {e}"))
 
+# 🧠 Entry point
 def main():
     parser = argparse.ArgumentParser(description="🛡️ C/C++ Vulnerability Sink Scanner")
+    parser.add_argument("--target", type=str, default=".", help="Path to scan (file or directory)")
     parser.add_argument("--sink", type=str, help="Scan for a specific sink only (e.g., memcpy)")
     parser.add_argument("--export", type=str, choices=["json", "csv"], help="Export results to json or csv")
     parser.add_argument("--output", type=str, default="vulnscan_output.txt", help="Output file for exported results")
-    parser.add_argument("--dir", type=str, default=".", help="Directory to scan")
 
     args = parser.parse_args()
 
@@ -90,7 +102,7 @@ def main():
         print(red(f"[!] Unknown sink '{args.sink}' — use one of: {', '.join(SINKS.keys())}"))
         return
 
-    results = run_scan(target_dir=args.dir, sink_filter=args.sink)
+    results = run_scan(target_path=args.target, sink_filter=args.sink)
 
     if args.export:
         export_results(results, args.export, args.output)
